@@ -1,0 +1,148 @@
+"""Centralized import registry for all SQLAlchemy ORM models."""
+
+from app.db.base import Base
+from app.modules.ai_practice.models import AIGenerationReview
+from app.modules.ai_tutor.models import (
+    AIConversation,
+    AIEvaluationRecord,
+    AIJob,
+    AIMessage,
+    AIUsageRecord,
+    PromptVersion,
+)
+from app.modules.assessments.models import (
+    Assessment,
+    AssessmentAttempt,
+    AssessmentItem,
+    AssessmentItemObjective,
+    AssessmentVersion,
+    AttemptResponse,
+    GradingResult,
+    GradingReview,
+    Question,
+    Rubric,
+    RubricCriterion,
+    RubricScore,
+)
+from app.modules.audit.models import AuditEvent
+from app.modules.content.models import (
+    ChunkEmbedding,
+    Document,
+    DocumentChunk,
+    DocumentProcessingJob,
+    DocumentVersion,
+)
+from app.modules.courses.models import (
+    Course,
+    CourseInstructorAssignment,
+    CourseModule,
+    CourseVersion,
+    LearningObjective,
+    Lesson,
+    LessonObjective,
+)
+from app.modules.enrollments.models import Enrollment, LearningEvent, ProgressSnapshot
+from app.modules.identity.models import (
+    EmailVerificationToken,
+    PasswordResetToken,
+    User,
+    UserSession,
+)
+from app.modules.learning_intelligence.models import (
+    LearnerObjectiveMastery,
+    Recommendation,
+    RemediationPlan,
+    RemediationPlanItem,
+)
+from app.modules.memberships.models import (
+    Invitation,
+    MembershipRole,
+    Permission,
+    Role,
+    RolePermission,
+    TenantMembership,
+)
+from app.modules.notifications.models import Notification, OutboxEvent
+from app.modules.subscriptions.models import (
+    BillingEvent,
+    IdempotencyRecord,
+    PlanEntitlement,
+    SubscriptionPlan,
+    TenantSubscription,
+    TenantUsageRecord,
+)
+from app.modules.tenants.models import (
+    Cohort,
+    CohortMembership,
+    InstructorAssignment,
+    Tenant,
+    TenantDomain,
+    TenantSettings,
+)
+
+__all__ = [
+    "Base",
+    "User",
+    "UserSession",
+    "PasswordResetToken",
+    "EmailVerificationToken",
+    "Tenant",
+    "TenantSettings",
+    "TenantDomain",
+    "Cohort",
+    "CohortMembership",
+    "InstructorAssignment",
+    "TenantMembership",
+    "Role",
+    "Permission",
+    "RolePermission",
+    "MembershipRole",
+    "Invitation",
+    "Course",
+    "CourseVersion",
+    "CourseModule",
+    "Lesson",
+    "LearningObjective",
+    "LessonObjective",
+    "CourseInstructorAssignment",
+    "Enrollment",
+    "LearningEvent",
+    "ProgressSnapshot",
+    "Assessment",
+    "AssessmentVersion",
+    "Question",
+    "AssessmentItem",
+    "AssessmentItemObjective",
+    "AssessmentAttempt",
+    "AttemptResponse",
+    "GradingResult",
+    "Rubric",
+    "RubricCriterion",
+    "RubricScore",
+    "GradingReview",
+    "Document",
+    "DocumentVersion",
+    "DocumentProcessingJob",
+    "DocumentChunk",
+    "ChunkEmbedding",
+    "AIConversation",
+    "AIMessage",
+    "AIJob",
+    "AIUsageRecord",
+    "PromptVersion",
+    "AIEvaluationRecord",
+    "AIGenerationReview",
+    "LearnerObjectiveMastery",
+    "Recommendation",
+    "RemediationPlan",
+    "RemediationPlanItem",
+    "SubscriptionPlan",
+    "PlanEntitlement",
+    "TenantSubscription",
+    "TenantUsageRecord",
+    "BillingEvent",
+    "IdempotencyRecord",
+    "Notification",
+    "OutboxEvent",
+    "AuditEvent",
+]
