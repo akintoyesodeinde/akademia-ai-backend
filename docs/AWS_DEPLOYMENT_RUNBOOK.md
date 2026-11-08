@@ -2,51 +2,44 @@
 
 ## 1. Pre-Deployment Checklist
 
-1. Authenticate to the AWS account associated with `toyesode123@gmail.com` from Windows PowerShell:
+1. Authenticate to the AWS account associated with `toyesode123@gmail.com` (**AWS Account ID `973429899833`**, region `eu-north-1`) from Windows PowerShell:
    ```powershell
-   aws sso login --profile akademia-deploy
    aws sts get-caller-identity --profile akademia-deploy
    ```
-2. Confirm the AWS account ID, target region (default `us-east-1`), and sandbox resource scope:
-   - **1x `db.t3.micro` RDS PostgreSQL 16 instance** (`--backup-retention-period 0` / no backups, Single-AZ, encrypted `gp3`).
-   - **1x `t3.micro` EC2 instance** launched from `akademia-ai-ec2-lt` (no EBS backup snapshots).
+2. Confirm the AWS account ID (`973429899833`), target region (`eu-north-1`), and sandbox resource scope:
+   - **1x `db.t3.micro` RDS PostgreSQL 18 (`18.6`) instance** (`--backup-retention-period 0` / no backups, Single-AZ, encrypted `20 GiB gp2` Free Tier).
+   - **1x `t3.micro` EC2 instance** (`i-0466cd9dca457d16b`, Public IP `13.60.186.44`) launched from `akademia-ai-ec2-lt` (no EBS backup snapshots).
 
 ## 2. Step-by-Step Provisioning Procedure
 
-### Step 1: Provision IAM Roles, Security Groups, RDS (`db.t3.micro`, No Backups) & EC2 Launch Template
+### Step 1: Provision IAM Roles, Security Groups, RDS (`db.t3.micro`, No Backups), SSM Parameters & EC2 Launch Template
 
 From `c:\Users\LENOVO\AkademiaAI\akademia-ai-backend`:
 
 ```powershell
 .\infra\aws\provision-sandbox.ps1 `
   -Profile "akademia-deploy" `
-  -Region "us-east-1" `
+  -Region "eu-north-1" `
   -GitHubOwner "akintoyesodeinde" `
   -Ec2InstanceType "t3.micro" `
   -RdsInstanceClass "db.t3.micro" `
-  -RdsMasterPassword "<STRONG_RDS_MASTER_PASSWORD>"
+  -RdsEngineVersion "18.6"
 ```
 
-### Step 2: Initialize PostgreSQL Least-Privilege Roles on RDS & Populate SSM Parameter Store
+### Step 2: Automated RDS Role Initialization & SSM Parameter Store Bootstrap
 
-Once `akademia-ai-db` reaches `available`:
-1. Retrieve the RDS endpoint:
-   ```powershell
-   $RdsEndpoint = aws rds describe-db-instances `
-     --profile akademia-deploy --region us-east-1 `
-     --db-instance-identifier akademia-ai-db `
-     --query "DBInstances[0].Endpoint.Address" --output text
-   ```
-2. Connect from an SSM Session on the EC2 instance (`aws ssm start-session --target <INSTANCE_ID>`) and run `scripts/init-db-roles.sql` with strong passwords for `akademia_migrator`, `akademia_app`, `akademia_worker`, and `akademia_readonly`.
-3. Store the runtime parameters as `SecureString` / `String` in AWS SSM Parameter Store:
-   ```powershell
-   aws ssm put-parameter --profile akademia-deploy --region us-east-1 --name "/akademia-ai/prod/database_url" --type "SecureString" --value "postgresql+asyncpg://akademia_app:<APP_PW>@${RdsEndpoint}:5432/akademia_ai" --overwrite
-   aws ssm put-parameter --profile akademia-deploy --region us-east-1 --name "/akademia-ai/prod/migration_database_url" --type "SecureString" --value "postgresql+asyncpg://akademia_migrator:<MIGRATOR_PW>@${RdsEndpoint}:5432/akademia_ai" --overwrite
-   aws ssm put-parameter --profile akademia-deploy --region us-east-1 --name "/akademia-ai/prod/worker_database_url" --type "SecureString" --value "postgresql+asyncpg://akademia_worker:<WORKER_PW>@${RdsEndpoint}:5432/akademia_ai" --overwrite
-   aws ssm put-parameter --profile akademia-deploy --region us-east-1 --name "/akademia-ai/prod/jwt_secret_key" --type "SecureString" --value "<RANDOM_64_CHAR_JWT_SECRET>" --overwrite
-   aws ssm put-parameter --profile akademia-deploy --region us-east-1 --name "/akademia-ai/prod/backend_image" --type "String" --value "akintoyesodeinde/akademia-ai-backend@sha256:<BACKEND_DIGEST>" --overwrite
-   aws ssm put-parameter --profile akademia-deploy --region us-east-1 --name "/akademia-ai/prod/frontend_image" --type "String" --value "akintoyesodeinde/akademia-ai-frontend@sha256:<FRONTEND_DIGEST>" --overwrite
-   ```
+`infra/aws/provision-sandbox.ps1` and `infra/aws/user-data.sh` automatically:
+1. Wait for `akademia-ai-db` (`akademia-ai-db.cte8a4cygk0a.eu-north-1.rds.amazonaws.com`) to reach `available`.
+2. Store all runtime parameters as `SecureString` / `String` under `/akademia-ai/prod/*` in AWS SSM Parameter Store (`eu-north-1`):
+   - `/akademia-ai/prod/database_url` (`SecureString`, `sslmode=verify-full`)
+   - `/akademia-ai/prod/migration_database_url` (`SecureString`, `sslmode=verify-full`)
+   - `/akademia-ai/prod/worker_database_url` (`SecureString`, `sslmode=verify-full`)
+   - `/akademia-ai/prod/jwt_secret_key` (`SecureString`)
+   - `/akademia-ai/prod/rds_endpoint` (`String`)
+   - `/akademia-ai/prod/rds_master_password`, `/akademia-ai/prod/migrator_password`, `/akademia-ai/prod/app_password`, `/akademia-ai/prod/worker_password`, `/akademia-ai/prod/readonly_password` (`SecureString`)
+   - `/akademia-ai/prod/backend_image` (`String`: `akintoyesodeinde/akademia-ai-backend@sha256:e3dfc9f8ea5cd1393276b178a75ed5d1137c3a5d32d7887bea72e048d4b7a8d4`)
+   - `/akademia-ai/prod/frontend_image` (`String`: `akintoyesodeinde/akademia-ai-frontend@sha256:3aff557118edcfe407a284005bce099c1ade960f84b16902d04a194095bbebf3`)
+3. On EC2 first boot (`user-data.sh`), download the AWS RDS Global CA Bundle (`/opt/akademia-ai/certs/rds-global-bundle.pem`), initialize the least-privilege PostgreSQL roles (`akademia_migrator`, `akademia_app`, `akademia_worker`, `akademia_readonly`) and `vector` extension on RDS, run `alembic upgrade head`, and start the Docker Compose stack.
 
 ## 3. Continuous Deployment & Controlled Database Migration Execution
 
@@ -54,8 +47,8 @@ On every merge to `main`:
 1. GitHub Actions runs full lint, typecheck, database migration, RLS, and AI quality gate tests.
 2. Trivy scans the built Docker image for `HIGH` and `CRITICAL` vulnerabilities.
 3. The image is pushed to Docker Hub (`akintoyesodeinde/akademia-ai-backend` or `akintoyesodeinde/akademia-ai-frontend`) and its `@sha256:...` digest is recorded.
-4. GitHub Actions assumes `arn:aws:iam::<ACCOUNT_ID>:role/akademia-github-deploy-role` via OIDC and invokes `ssm-deploy-service.sh` / `ssm-deploy-frontend.sh`.
-5. On the EC2 host, `/opt/akademia-ai/deploy-release.sh`:
+4. GitHub Actions assumes `arn:aws:iam::973429899833:role/akademia-github-deploy-role` via OIDC and invokes `ssm-deploy-service.sh` / `ssm-deploy-frontend.sh`.
+5. On the EC2 host (`i-0466cd9dca457d16b`), `/opt/akademia-ai/deploy-release.sh`:
    - Saves the current working image digests to `/opt/akademia-ai/.env.images.prev`.
    - Pulls the new `@sha256:...` digest.
    - Runs `akademia-migrator` (`alembic upgrade head`) as a single-execution step before starting `akademia-api` and `akademia-worker`.
@@ -63,12 +56,12 @@ On every merge to `main`:
 
 ## 4. Automated & Manual Rollback Procedure
 
-- **Automated Rollback**: If `docker pull`, `alembic upgrade head`, or the 60-second HTTP health check fails during `/opt/akademia-ai/deploy-release.sh`, the `ERR` trap automatically restores `/opt/akademia-ai/.env.images.prev` and restarts the previous healthy containers.
+- **Automated Rollback (Verified Live via SSM Run Command)**: If `docker pull`, `alembic upgrade head`, or the 60-second HTTP health check fails during `/opt/akademia-ai/deploy-release.sh`, the `ERR` trap automatically restores `/opt/akademia-ai/.env.images.prev` and restarts the previous healthy containers.
 - **Manual Rollback via SSM Run Command**:
   ```powershell
   aws ssm send-command `
-    --profile akademia-deploy --region us-east-1 `
-    --instance-ids "<INSTANCE_ID>" `
+    --profile akademia-deploy --region eu-north-1 `
+    --instance-ids "i-0466cd9dca457d16b" `
     --document-name "AWS-RunShellScript" `
     --parameters 'commands=["cp /opt/akademia-ai/.env.images.prev /opt/akademia-ai/.env.images && docker compose --env-file /opt/akademia-ai/.env.images -f /opt/akademia-ai/compose.prod.yaml up -d"]'
   ```

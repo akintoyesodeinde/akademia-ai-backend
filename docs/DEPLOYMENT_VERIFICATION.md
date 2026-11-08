@@ -15,21 +15,17 @@
 | GitHub Feature Branch & PR Publishing | `akintoyesodeinde/akademia-ai-backend` & `akintoyesodeinde/akademia-ai-frontend` | **PASSED** | Backend PR #1 (`https://github.com/akintoyesodeinde/akademia-ai-backend/pull/1`) & Frontend PR #1 (`https://github.com/akintoyesodeinde/akademia-ai-frontend/pull/1`) |
 | Docker Hub Immutable Image Push | `akintoyesodeinde/akademia-ai-backend` & `akintoyesodeinde/akademia-ai-frontend` | **PASSED** | Backend: `sha256:e3dfc9f8ea5cd1393276b178a75ed5d1137c3a5d32d7887bea72e048d4b7a8d4`; Frontend: `sha256:3aff557118edcfe407a284005bce099c1ade960f84b16902d04a194095bbebf3` |
 
-## 2. AWS CLI & Account Verification Status
+## 2. Live AWS Sandbox Deployment & Verification Summary (Account `973429899833` — `eu-north-1`)
 
-Executed on host Windows PowerShell:
-- `aws --version`: `aws-cli/2.36.17 Python/3.14.6 Windows/10 script-exe/AMD64`
-- `aws sts get-caller-identity --profile akademia-deploy`: `The config profile (akademia-deploy) could not be found`
-- `aws sts get-caller-identity` (default profile):
-  - `Account`: `415805875879`
-  - `Arn`: `arn:aws:iam::415805875879:user/drinks-deployer`
-  - `UserId`: `AIDAWBT7WE2T3FK2VKDGQ`
-
-### Approval Gate Before Provisioning AWS Resources (Step 10 / Step 11)
-
-Per Section 7 and Section 14 ("Do not create resources until the account, AWS region, deployment scope and expected costs have been confirmed. Stop at any step that requires unavailable credentials, explicit approval, or external account access"):
-1. **Account Confirmation Required**: Please confirm whether AWS Account `415805875879` (`arn:aws:iam::415805875879:user/drinks-deployer`) is the intended target account for `toyesode123@gmail.com` or if you wish to authenticate a separate `akademia-deploy` profile first.
-2. **Region & Cost Confirmation Required**:
-   - Target Region: `us-east-1` (default in `infra/aws/provision-sandbox.ps1`).
-   - Planned Resources: **1x `db.t3.micro` RDS PostgreSQL 16** (`BackupRetentionPeriod=0` / no backups, Single-AZ, 20 GiB `gp3`) + **1x `t3.micro` EC2 instance** (Amazon Linux 2023, 20 GiB `gp3`, no snapshots/backups).
-   - Estimated Sandbox Cost: `$0/month` if within active 12-month AWS Free Tier (`750 hrs/mo` `t3.micro` EC2 + `750 hrs/mo` `db.t3.micro` RDS + `20 GiB` RDS storage, `$0` backup storage since backups are disabled), or `~$21–$24/month` (`~$0.017/hr` `db.t3.micro` + `~$0.0104/hr` `t3.micro` + EBS/RDS `gp3` storage) outside Free Tier.
+| Check | AWS Resource / Endpoint | Result | Evidence / Identifier |
+|---|---|---|---|
+| AWS STS Identity Verification | `aws sts get-caller-identity --profile akademia-deploy` | **PASSED** | Account `973429899833`, ARN `arn:aws:iam::973429899833:user/akademia-deploy` (`toyesode123@gmail.com`) |
+| IAM Roles & Instance Profile | `akademia-github-deploy-role` & `akademia-ec2-instance-role` | **PASSED** | `arn:aws:iam::973429899833:role/akademia-github-deploy-role`, `arn:aws:iam::973429899833:instance-profile/akademia-ec2-instance-profile` |
+| VPC & Security Groups | `vpc-010c9378937e51230` (`eu-north-1`) | **PASSED** | `akademia-ec2-sg` (`sg-068d80172b5e00cb9`, ports `80`/`443` only; no SSH `22`) & `akademia-rds-sg` (`sg-05b6d8816c6137f57`, port `5432` strictly from `akademia-ec2-sg`) |
+| RDS PostgreSQL 18.6 (`db.t3.micro`) | `akademia-ai-db` | **PASSED** | Endpoint `akademia-ai-db.cte8a4cygk0a.eu-north-1.rds.amazonaws.com:5432`, `EngineVersion=18.6`, `MultiAZ=false` (Single-AZ), `BackupRetentionPeriod=0` (no backups), `PubliclyAccessible=false`, `20 GiB gp2` Free Tier |
+| EC2 Launch Template & Single Host | `akademia-ai-ec2-lt` -> `i-0466cd9dca457d16b` | **PASSED** | **1x `t3.micro`** (`PublicIp: 13.60.186.44`, `PrivateIp: 172.31.46.69`), Amazon Linux 2023, `IMDSv2=required`, 20 GiB encrypted `gp3`, no EBS backups |
+| RDS Role Provisioning & Alembic Migrations | `akademia_migrator`, `akademia_app`, `akademia_worker`, `akademia_readonly` | **PASSED** | `vector` extension (`0.8.1`), all 12 Alembic migrations (`001`–`012`) applied over TLS (`sslmode=verify-full` with AWS RDS global bundle) |
+| Live AWS Frontend & SPA Routing | `http://13.60.186.44/` & `http://13.60.186.44/instructor/courses` | **PASSED** | `HTTP 200 OK`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` |
+| Live AWS Health Checks | `http://13.60.186.44/healthz` & `http://13.60.186.44/api/v1/platform/health` | **PASSED** | `{"status":"healthy","service":"akademia-ai-frontend"}` & `{"status":"healthy","service":"akademia-ai-backend","database":"connected"}` |
+| Live Multi-Tenant E2E Workflow on AWS | `http://13.60.186.44/api/v1/*` | **PASSED** | Registered user, authenticated JWT (`len=304`), created tenant `7934cca2-56b2-4047-9027-d663ee0051dc`, created course `0eb6b856-71e3-4d37-a1e3-3974ae0bf947` in RDS PostgreSQL 18.6 |
+| Automated Rollback Verification | `/opt/akademia-ai/deploy-release.sh` via SSM Run Command | **PASSED** | Simulated invalid digest automatically triggered `ERR` trap, restored `/opt/akademia-ai/.env.images.prev`, and kept `/api/v1/platform/health` returning `200 OK` |
