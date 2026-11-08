@@ -4,10 +4,10 @@
 
 Each independent repository publishes its own immutable container image to Docker Hub under the discovered namespace `akintoyesodeinde` (configurable via the `DOCKERHUB_NAMESPACE` repository variable):
 
-| Repository | Docker Hub Image Name | Runtime Base | Exposed Port |
+| Repository | Docker Hub Image Name | Published Commit Tag | Immutable Digest |
 |---|---|---|---|
-| `akademia-ai-backend` | `akintoyesodeinde/akademia-ai-backend` | `python:3.13-slim` (non-root `akademia`, UID `10001`) | `8000` |
-| `akademia-ai-frontend` | `akintoyesodeinde/akademia-ai-frontend` | `nginx:1.27-alpine` | `80` |
+| `akademia-ai-backend` | `akintoyesodeinde/akademia-ai-backend` | `sha-6a949d9861f5329b4cdff3e0c67b344a17711427` | `sha256:e3dfc9f8ea5cd1393276b178a75ed5d1137c3a5d32d7887bea72e048d4b7a8d4` |
+| `akademia-ai-frontend` | `akintoyesodeinde/akademia-ai-frontend` | `sha-e824b98f916836a61903d0e537be86abb1f0f70b` | `sha256:3aff557118edcfe407a284005bce099c1ade960f84b16902d04a194095bbebf3` |
 
 ## 2. GitHub Actions CI/CD Workflows
 

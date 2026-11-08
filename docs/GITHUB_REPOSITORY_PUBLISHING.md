@@ -4,10 +4,10 @@
 
 Akademia AI strictly maintains two separate Git repositories (never a monorepo):
 
-| Repository | Local Directory | GitHub Remote (`origin`) | Default Branch | Feature Branch |
-|---|---|---|---|---|
-| **Backend** | `c:\Users\LENOVO\AkademiaAI\akademia-ai-backend` | `https://github.com/akintoyesodeinde/akademia-ai-backend.git` | `main` | `feat/docker-aws-cicd-deployment` |
-| **Frontend** | `c:\Users\LENOVO\AkademiaAI\akademia-ai-frontend` | `https://github.com/akintoyesodeinde/akademia-ai-frontend.git` | `main` | `feat/docker-aws-cicd-deployment` |
+| Repository | Local Directory | GitHub Remote (`origin`) | Default Branch | Feature Branch | Pull Request |
+|---|---|---|---|---|---|
+| **Backend** | `c:\Users\LENOVO\AkademiaAI\akademia-ai-backend` | `https://github.com/akintoyesodeinde/akademia-ai-backend.git` | `main` (`10b3731`) | `feat/docker-aws-cicd-deployment` (`6a949d9861f5329b4cdff3e0c67b344a17711427`) | https://github.com/akintoyesodeinde/akademia-ai-backend/pull/1 |
+| **Frontend** | `c:\Users\LENOVO\AkademiaAI\akademia-ai-frontend` | `https://github.com/akintoyesodeinde/akademia-ai-frontend.git` | `main` (`745ea5a`) | `feat/docker-aws-cicd-deployment` (`e824b98f916836a61903d0e537be86abb1f0f70b`) | https://github.com/akintoyesodeinde/akademia-ai-frontend/pull/1 |
 
 ## 2. Secret & Credential Hygiene Verification
 

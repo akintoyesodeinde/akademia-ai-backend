@@ -12,6 +12,8 @@
 | Least-Privilege Runtime Roles & RLS | `akademia_app`, `akademia_worker` (`NOSUPERUSER NOBYPASSRLS`) across 52 tenant tables | **PASSED** | Verified in `test_migrations_and_schema.py` & `test_rls_and_tenant_isolation.py` |
 | Live Frontend-to-Backend Proxy Flow | `http://127.0.0.1:5175/api/v1/*` -> `http://api:8000` | **PASSED** | Registered user, authenticated JWT (`len=304`), created tenant `1bde05cb-32bc-4bb2-896c-cc1e1bd287a8`, verified `/tenants/current`, created course `1e7ec52a-2a09-4c19-9b6f-8f1b3b7c0659` (`CS-1794153126`) |
 | Missing External AI Provider Guardrail | `AI_PROVIDER=openai_compatible` without `AI_API_KEY` | **PASSED** | Raises `ExternalProviderError("AI_API_KEY is required when AI_PROVIDER=openai_compatible.")` rather than returning fake data |
+| GitHub Feature Branch & PR Publishing | `akintoyesodeinde/akademia-ai-backend` & `akintoyesodeinde/akademia-ai-frontend` | **PASSED** | Backend PR #1 (`https://github.com/akintoyesodeinde/akademia-ai-backend/pull/1`) & Frontend PR #1 (`https://github.com/akintoyesodeinde/akademia-ai-frontend/pull/1`) |
+| Docker Hub Immutable Image Push | `akintoyesodeinde/akademia-ai-backend` & `akintoyesodeinde/akademia-ai-frontend` | **PASSED** | Backend: `sha256:e3dfc9f8ea5cd1393276b178a75ed5d1137c3a5d32d7887bea72e048d4b7a8d4`; Frontend: `sha256:3aff557118edcfe407a284005bce099c1ade960f84b16902d04a194095bbebf3` |
 
 ## 2. AWS CLI & Account Verification Status
 
