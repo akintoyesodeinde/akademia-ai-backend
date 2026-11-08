@@ -1,0 +1,191 @@
+name: Backend CI/CD — Test, Scan, Docker Hub Publish & AWS OIDC Deploy
+
+on:
+  push:
+    branches: [main, "feat/**", "release/**"]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+env:
+  DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || 'akintoyesodeinde' }}
+  IMAGE_NAME: akademia-ai-backend
+
+jobs:
+  lint-typecheck-and-test:
+    name: 1. Lint, Typecheck, Migrations & Test Suite
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_dev_pw
+          POSTGRES_DB: akademia_ai
+        ports:
+          - 5436:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d akademia_ai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6386:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python 3.13
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies from lockfile
+        run: uv sync --frozen --dev
+
+      - name: Provision PostgreSQL runtime roles and test database
+        env:
+          PGPASSWORD: postgres_dev_pw
+        run: psql -h localhost -p 5436 -U postgres -d akademia_ai -f scripts/init-db-roles.sql
+
+      - name: Run Ruff lint check
+        run: uv run ruff check .
+
+      - name: Run mypy static type check
+        run: uv run mypy app
+
+      - name: Run Alembic migrations on primary and test databases
+        run: |
+          MIGRATION_DATABASE_URL="postgresql+asyncpg://akademia_migrator:akademia_migrator_dev_pw@localhost:5436/akademia_ai" uv run alembic upgrade head
+          MIGRATION_DATABASE_URL="postgresql+asyncpg://akademia_migrator:akademia_migrator_dev_pw@localhost:5436/akademia_ai_test" uv run alembic upgrade head
+
+      - name: Run unit, integration, RLS isolation, API contract, and AI evaluation tests
+        env:
+          APP_ENV: test
+          DATABASE_URL: postgresql+asyncpg://akademia_app:akademia_app_dev_pw@localhost:5436/akademia_ai_test
+          MIGRATION_DATABASE_URL: postgresql+asyncpg://akademia_migrator:akademia_migrator_dev_pw@localhost:5436/akademia_ai_test
+          WORKER_DATABASE_URL: postgresql+asyncpg://akademia_worker:akademia_worker_dev_pw@localhost:5436/akademia_ai_test
+          SUPERUSER_DATABASE_URL: postgresql+asyncpg://postgres:postgres_dev_pw@localhost:5436/akademia_ai_test
+          REDIS_URL: redis://localhost:6386/0
+          JWT_SECRET_KEY: "ci-test-secret-key-with-at-least-32-characters-long"
+        run: uv run pytest --junitxml=pytest-report.xml
+
+      - name: Export OpenAPI artifact
+        run: uv run python scripts/export_openapi.py
+
+      - name: Upload OpenAPI and Test Report Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-ci-artifacts
+          path: |
+            openapi.json
+            pytest-report.xml
+
+  build-scan-and-publish:
+    name: 2. Build, Vulnerability Scan & Publish Docker Image
+    needs: [lint-typecheck-and-test]
+    runs-on: ubuntu-latest
+    outputs:
+      image_repo: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}
+      image_tag: sha-${{ github.sha }}
+      image_digest: ${{ steps.push.outputs.digest || steps.build-local.outputs.digest }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build candidate image for vulnerability scanning
+        id: build-local
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy container vulnerability scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Authenticate to Docker Hub
+        if: github.event_name != 'pull_request' && secrets.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME || env.DOCKERHUB_NAMESPACE }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract immutable tags (commit SHA + optional semver tag)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=long
+            type=semver,pattern={{version}}
+
+      - name: Push immutable image to Docker Hub
+        id: push
+        if: github.event_name != 'pull_request' && secrets.DOCKERHUB_TOKEN != ''
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+
+      - name: Record immutable image digest in workflow summary
+        run: |
+          DIGEST="${{ steps.push.outputs.digest || steps.build-local.outputs.digest }}"
+          echo "### Backend Container Image Artifact" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Repository**: \`${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit SHA Tag**: \`sha-${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Immutable Digest**: \`${DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-aws-ec2:
+    name: 3. Deploy to AWS EC2 via OIDC & SSM Run Command
+    needs: [build-scan-and-publish]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Assume AWS Deployment IAM Role via GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          role-session-name: akademia-backend-deploy-${{ github.run_id }}
+
+      - name: Update SSM Parameter and Trigger Controlled SSM Deployment with Rollback
+        env:
+          IMAGE_REF: "${{ needs.build-scan-and-publish.outputs.image_repo }}@${{ needs.build-scan-and-publish.outputs.image_digest }}"
+        run: |
+          chmod +x infra/aws/scripts/ssm-deploy-service.sh
+          ./infra/aws/scripts/ssm-deploy-service.sh "backend" "$IMAGE_REF"
