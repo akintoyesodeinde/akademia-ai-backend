@@ -134,7 +134,7 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
         cur.execute('CREATE EXTENSION IF NOT EXISTS "vector";')
 
         roles = [
-            ("akademia_migrator", migrator_pw, "NOSUPERUSER CREATEDB NOCREATEROLE"),
+            ("akademia_migrator", migrator_pw, "NOSUPERUSER CREATEDB NOCREATEROLE BYPASSRLS"),
             ("akademia_app", app_pw, "NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"),
             ("akademia_worker", worker_pw, "NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"),
             ("akademia_readonly", readonly_pw, "NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"),
@@ -146,6 +146,7 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
             else:
                 cur.execute(f"CREATE ROLE {role_name} WITH LOGIN PASSWORD '{pw}' {attrs};")
 
+        cur.execute("GRANT rds_superuser TO akademia_migrator;")
         cur.execute("GRANT akademia_migrator TO postgres;")
         cur.execute("GRANT CONNECT ON DATABASE akademia_ai TO akademia_migrator, akademia_app, akademia_worker, akademia_readonly;")
         cur.execute("GRANT USAGE, CREATE ON SCHEMA public TO akademia_migrator;")
