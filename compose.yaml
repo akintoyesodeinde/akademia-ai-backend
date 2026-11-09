@@ -1,0 +1,144 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: akademia-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-postgres_dev_pw}
+      POSTGRES_DB: akademia_ai
+    ports:
+      - "${POSTGRES_PORT:-5436}:5432"
+    volumes:
+      - akademia_pgdata:/var/lib/postgresql/data
+      - ./scripts/init-db-roles.sql:/docker-entrypoint-initdb.d/01-init-db-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d akademia_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: akademia-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6386}:6379"
+    volumes:
+      - akademia_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrator:
+    image: akademia-ai-backend:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: akademia-migrator
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+asyncpg://akademia_migrator:akademia_migrator_dev_pw@postgres:5432/akademia_ai
+      MIGRATION_DATABASE_URL: postgresql+asyncpg://akademia_migrator:akademia_migrator_dev_pw@postgres:5432/akademia_ai
+      WORKER_DATABASE_URL: postgresql+asyncpg://akademia_worker:akademia_worker_dev_pw@postgres:5432/akademia_ai
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-akademia-local-dev-secret-key-at-least-32-chars}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    image: akademia-ai-backend:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: akademia-api
+    restart: unless-stopped
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+asyncpg://akademia_app:akademia_app_dev_pw@postgres:5432/akademia_ai
+      MIGRATION_DATABASE_URL: postgresql+asyncpg://akademia_migrator:akademia_migrator_dev_pw@postgres:5432/akademia_ai
+      WORKER_DATABASE_URL: postgresql+asyncpg://akademia_worker:akademia_worker_dev_pw@postgres:5432/akademia_ai
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-akademia-local-dev-secret-key-at-least-32-chars}
+      STORAGE_BACKEND: local
+      LOCAL_STORAGE_PATH: /app/storage_data
+      AI_PROVIDER: ${AI_PROVIDER:-deterministic}
+      CORS_ORIGINS: '["http://localhost:5173","http://localhost:5175","http://127.0.0.1:5175","http://localhost:3000","http://127.0.0.1:8088"]'
+    ports:
+      - "${API_PORT:-8000}:8000"
+      - "8005:8000"
+    volumes:
+      - akademia_storage:/app/storage_data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/platform/health', timeout=8)"]
+      interval: 10s
+      timeout: 10s
+      start_period: 60s
+      retries: 10
+
+  worker:
+    image: akademia-ai-backend:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: akademia-worker
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.runner"]
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+asyncpg://akademia_worker:akademia_worker_dev_pw@postgres:5432/akademia_ai
+      MIGRATION_DATABASE_URL: postgresql+asyncpg://akademia_migrator:akademia_migrator_dev_pw@postgres:5432/akademia_ai
+      WORKER_DATABASE_URL: postgresql+asyncpg://akademia_worker:akademia_worker_dev_pw@postgres:5432/akademia_ai
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-akademia-local-dev-secret-key-at-least-32-chars}
+      STORAGE_BACKEND: local
+      LOCAL_STORAGE_PATH: /app/storage_data
+      AI_PROVIDER: ${AI_PROVIDER:-deterministic}
+    volumes:
+      - akademia_storage:/app/storage_data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  frontend:
+    image: akademia-ai-frontend:local
+    build:
+      context: ../akademia-ai-frontend
+      dockerfile: Dockerfile
+    container_name: akademia-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api/v1}
+      API_UPSTREAM: http://api:8000
+    ports:
+      - "${FRONTEND_PORT:-5175}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  akademia_pgdata:
+  akademia_redisdata:
+  akademia_storage:
